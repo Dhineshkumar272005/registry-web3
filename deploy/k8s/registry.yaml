@@ -1,0 +1,110 @@
+# Apply with: kubectl apply -f deploy/k8s/registry.yaml
+# Create the secret out of band from your key vault (never commit it):
+#   kubectl -n trial-registry create secret generic registry-secrets \
+#     --from-literal=DATABASE_URL=... --from-literal=DATA_KEYS=... --from-literal=JWT_SECRET=... --from-literal=CRON_TOKEN=...
+apiVersion: v1
+kind: Namespace
+metadata: { name: trial-registry, labels: { pod-security.kubernetes.io/enforce: restricted } }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: registry, namespace: trial-registry }
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: registry, namespace: trial-registry }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: registry } }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  template:
+    metadata: { labels: { app: registry } }
+    spec:
+      serviceAccountName: registry
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: web
+          image: REGISTRY_HOST/trial-registry:VERSION   # built per environment with the Dockerfile
+          ports: [{ containerPort: 3000 }]
+          envFrom: [{ secretRef: { name: registry-secrets } }]
+          env:
+            - { name: NEXT_PUBLIC_ENV, value: "production" }
+            - { name: NEXT_PUBLIC_REGISTRY_ADDRESS, value: "0xCONTRACT_ADDRESS" }
+            - { name: NEXT_PUBLIC_RPC, value: "https://RPC_ENDPOINT" }
+            - { name: NEXT_PUBLIC_CHAIN_ID_HEX, value: "0xCHAIN_ID" }
+            - { name: DEPLOY_BLOCK, value: "0" }          # block where the contract was deployed
+            - { name: ADMIN_WALLETS, value: "0xADMIN_WALLET_1,0xADMIN_WALLET_2" }
+            - { name: TRUST_PROXY_HOPS, value: "1" }      # number of proxies in front (ingress); makes client IPs trustworthy
+            - { name: DB_POOL_MAX, value: "5" }           # replicas x this must stay below the database connection limit
+            - { name: INDEXER_CONFIRMATIONS, value: "12" }
+          readinessProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 10, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /api/live, port: 3000 }, initialDelaySeconds: 20, periodSeconds: 20 }
+          resources: { requests: { cpu: 250m, memory: 256Mi }, limits: { cpu: "1", memory: 512Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }, { name: cache, mountPath: /app/.next/cache }]
+      volumes: [{ name: tmp, emptyDir: {} }, { name: cache, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: registry, namespace: trial-registry }
+spec: { selector: { app: registry }, ports: [{ port: 80, targetPort: 3000 }] }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: registry, namespace: trial-registry }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: registry }
+  minReplicas: 3
+  maxReplicas: 20
+  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } } }]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: { name: registry, namespace: trial-registry }
+spec: { minAvailable: 2, selector: { matchLabels: { app: registry } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: registry, namespace: trial-registry }
+spec:
+  podSelector: { matchLabels: { app: registry } }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - { from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } } }], ports: [{ port: 3000 }] }
+    - { from: [{ podSelector: { matchLabels: { app: registry-indexer } } }], ports: [{ port: 3000 }] }
+  egress:   # database, RPC node and DNS only; tighten the CIDRs to your network
+    - { ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }] }
+    - { ports: [{ port: 5432 }, { port: 443 }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: registry
+  namespace: trial-registry
+  annotations: { nginx.ingress.kubernetes.io/ssl-redirect: "true", nginx.ingress.kubernetes.io/proxy-body-size: 1m }
+spec:
+  ingressClassName: nginx
+  tls: [{ hosts: [registry.example.gov], secretName: registry-tls }]
+  rules: [{ host: registry.example.gov, http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: registry, port: { number: 80 } } } }] } }]
+---
+# Indexer worker: copies ledger events into the database every few seconds. One replica is enough, and it is safe to run more.
+# Pin the image to the version approved by your registry.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: registry-indexer, namespace: trial-registry }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: registry-indexer } }
+  template:
+    metadata: { labels: { app: registry-indexer } }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: sync
+          image: curlimages/curl:8.10.1
+          command: ["sh", "-c", "while true; do curl -fsS -m 60 -H \"x-cron-token: $CRON_TOKEN\" http://registry.trial-registry.svc/api/internal/sync >/dev/null || echo sync failed; sleep 10; done"]
+          envFrom: [{ secretRef: { name: registry-secrets } }]
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { cpu: 100m, memory: 64Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }

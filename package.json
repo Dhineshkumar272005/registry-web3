@@ -1,0 +1,37 @@
+{
+  "name": "registry-web3",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:amoy": "hardhat run scripts/deploy.js --network amoy",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "prebuild": "node scripts/preflight.js build",
+    "loadtest": "node scripts/loadtest.js",
+    "e2e": "node e2e/e2e.mjs",
+    "e2e:rotate": "ALLOW_DESTRUCTIVE_TEST=true node e2e/rotate.mjs",
+    "e2e:ui": "node e2e/ui.mjs"
+  },
+  "dependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.7",
+    "ethers": "^6.13.0",
+    "next": "^14.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "pg": "^8.12.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0",
+    "autocannon": "^7.15.0",
+    "puppeteer-core": "^23.0.0",
+    "@sparticuz/chromium": "^131.0.0"
+  }
+}
