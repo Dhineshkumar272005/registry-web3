@@ -2,24 +2,7 @@ version: "3.9"
 
 services:
 
-  # ── Postgres database ───────────────────────────────────────────────────────
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: registry
-      POSTGRES_USER: registry
-      POSTGRES_PASSWORD: registrypass
-    volumes:
-      - pgdata:/var/lib/postgresql/data   # data persists across restarts
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql  # auto-runs on first start
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U registry -d registry"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  # ── Next.js app ─────────────────────────────────────────────────────────────
+  # ── Next.js app (database = Neon cloud, blockchain = Alchemy / local Hardhat) ─
   app:
     build:
       context: .
@@ -42,8 +25,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: postgresql://registry:registrypass@db:5432/registry
-      DATABASE_SSL: "false"
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_SSL: "true"
       DATA_KEY: ${DATA_KEY}
       JWT_SECRET: ${JWT_SECRET}
       CRON_TOKEN: ${CRON_TOKEN}
@@ -52,10 +35,3 @@ services:
       TRUST_PROXY_HOPS: "0"
       INDEXER_CONFIRMATIONS: ${INDEXER_CONFIRMATIONS:-0}
       ADMIN_WALLETS: ${ADMIN_WALLETS:-}
-    depends_on:
-      db:
-        condition: service_healthy
-
-volumes:
-  pgdata:
-
