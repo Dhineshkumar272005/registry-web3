@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+
+  # ── Postgres database ───────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: registry
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: registrypass
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # data persists across restarts
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql  # auto-runs on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry -d registry"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Next.js app ─────────────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_ENV: staging
+        NEXT_PUBLIC_REGISTRY_ADDRESS: ${NEXT_PUBLIC_REGISTRY_ADDRESS}
+        NEXT_PUBLIC_RPC: ${NEXT_PUBLIC_RPC}
+        NEXT_PUBLIC_CHAIN_ID_HEX: ${NEXT_PUBLIC_CHAIN_ID_HEX:-0x7a69}
+        NEXT_PUBLIC_CHAIN_NAME: ${NEXT_PUBLIC_CHAIN_NAME:-Hardhat Local}
+        NEXT_PUBLIC_CHAIN_SYMBOL: ${NEXT_PUBLIC_CHAIN_SYMBOL:-ETH}
+        NEXT_PUBLIC_CHAIN_SHORT: ${NEXT_PUBLIC_CHAIN_SHORT:-local}
+        NEXT_PUBLIC_EXPLORER: ${NEXT_PUBLIC_EXPLORER:-}
+        NEXT_PUBLIC_ORG_NAME: ${NEXT_PUBLIC_ORG_NAME:-Test}
+        NEXT_PUBLIC_CONTACT_EMAIL: ${NEXT_PUBLIC_CONTACT_EMAIL:-test@test.com}
+        NEXT_PUBLIC_AUDIT_URL: ${NEXT_PUBLIC_AUDIT_URL:-}
+        NEXT_PUBLIC_LEGAL_REVIEWED: "false"
+        NEXT_PUBLIC_CONTENT_REVIEWED: "false"
+        NEXT_PUBLIC_LEGAL_UPDATED: ""
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://registry:registrypass@db:5432/registry
+      DATABASE_SSL: "false"
+      DATA_KEY: ${DATA_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      CRON_TOKEN: ${CRON_TOKEN}
+      DEPLOY_BLOCK: ${DEPLOY_BLOCK:-0}
+      DB_POOL_MAX: "5"
+      TRUST_PROXY_HOPS: "0"
+      INDEXER_CONFIRMATIONS: ${INDEXER_CONFIRMATIONS:-0}
+      ADMIN_WALLETS: ${ADMIN_WALLETS:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+
