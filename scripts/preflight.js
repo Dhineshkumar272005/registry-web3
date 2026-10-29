@@ -3,6 +3,12 @@
 //   node scripts/preflight.js runtime   (secrets, run at container start)
 try { require("dotenv").config(); } catch {}
 const e = process.env, mode = process.argv[2] || "all", prod = e.NEXT_PUBLIC_ENV === "production";
+if (!e.NEXT_PUBLIC_REGISTRY_ADDRESS && !prod) {
+  e.NEXT_PUBLIC_REGISTRY_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+}
+if (!e.NEXT_PUBLIC_RPC && !prod) {
+  e.NEXT_PUBLIC_RPC = "https://polygon-amoy.g.alchemy.com/v2/alch_XJaWp9zWnEBjBAaY2K6eV";
+}
 const TESTNETS = ["0x13882", "0x13881", "0xaa36a7", "0x5", "0x7a69", "0x539"];
 const fails = [];
 const need = (ok, msg) => { if (!ok) fails.push(msg); };
