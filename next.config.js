@@ -5,7 +5,7 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
-  `connect-src 'self' ${rpc || "https://rpc-amoy.polygon.technology"}${dev ? " ws: http://127.0.0.1:8545" : ""}`,
+  `connect-src 'self' https://*.alchemy.com https://80002.rpc.thirdweb.com ${rpc || ""}${dev ? " ws: http://127.0.0.1:8545" : ""}`,
   "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'",
 ].join("; ");
 module.exports = {
